@@ -8,11 +8,17 @@ const googleAuth = require('google-auth-library');
 const program = require('commander');
 const version = require('./package').version;
 
+// If modifying these scopes, delete your previously saved credentials
+// at ~/.credentials/sheets.googleapis.com-gssr.json
+const GOOGLE_AUTH_SCOPE = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+const TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE) + '/.credentials/';
+const TOKEN_PATH = TOKEN_DIR + 'sheets.googleapis.com-gssr.json';
+
 module.exports.run = (argv) => {
     program
         .version(version)
         .usage('<options> [outputFile]')
-        .option('-c, --client-secrets-file <file>', 'OAuth client secrets file'
+        .option('-c, --client-secrets-file <file>', 'OAuth client secrets file or Service account key file'
             + '\n\t\t See this wizard: https://developers.google.com/sheets/api/quickstart/nodejs#step_1_turn_on_the_api_name'
             + '\n\t\t',
             'client_secret.json')
@@ -28,12 +34,6 @@ module.exports.run = (argv) => {
         })
         .parse(argv);
 
-    // If modifying these scopes, delete your previously saved credentials
-    // at ~/.credentials/sheets.googleapis.com-nodejs-quickstart.json
-    var SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
-    var TOKEN_DIR = (process.env.HOME || process.env.HOMEPATH || process.env.USERPROFILE) + '/.credentials/';
-    var TOKEN_PATH = TOKEN_DIR + 'sheets.googleapis.com-gssr.json';
-
     // Load client secrets from a local file.
     fs.readFile(program.clientSecretsFile, (err, content) => {
         if (err) {
@@ -45,13 +45,51 @@ module.exports.run = (argv) => {
     });
 
     /**
+     * Authorizing and execute the given callback function.
+     *
+     * @param {Object} credentials The authorization client secret or Service account key.
+     * @param {function} callback The callback to call with the authorized client.
+     */
+    function authorize(credentials, callback) {
+        if (credentials.hasOwnProperty('type') && credentials.type === 'service_account') {
+            authorizeJWT(credentials, callback);
+        } else {
+            authorizeOAuth2(credentials, callback);
+        }
+    }
+
+    /**
+     * Create an OAuth2 client using JWT (Service Tokens), and then execute the
+     * given callback function.
+     *
+     * @param {Object} credentials The authorization Service account key.
+     * @param {function} callback The callback to call with the authorized client.
+     */
+    function authorizeJWT(credentials, callback) {
+        const auth = new googleAuth();
+        const client = new auth.JWT(
+            credentials.client_email,
+            null,
+            credentials.private_key,
+            GOOGLE_AUTH_SCOPE,
+            null);
+        client.authorize((err, token) => {
+            if (err) {
+                console.error(err)
+                return;
+            }
+            callback(client);
+        });
+    }
+
+    /**
      * Create an OAuth2 client with the given credentials, and then execute the
      * given callback function.
      *
      * @param {Object} credentials The authorization client credentials.
      * @param {function} callback The callback to call with the authorized client.
      */
-    function authorize(credentials, callback) {
+    function authorizeOAuth2(credentials, callback) {
         var clientSecret = credentials.installed.client_secret;
         var clientId = credentials.installed.client_id;
         var redirectUrl = credentials.installed.redirect_uris[0];
@@ -80,7 +118,7 @@ module.exports.run = (argv) => {
     function getNewToken(oauth2Client, callback) {
         var authUrl = oauth2Client.generateAuthUrl({
             access_type: 'offline',
-            scope: SCOPES
+            scope: GOOGLE_AUTH_SCOPE
         });
 
         console.log(`Authorize this app by visiting this url: ${authUrl}`);
